@@ -2,7 +2,7 @@
  * Solo guarda la propia app (no los datos del Libro, que van en el almacenamiento de la app).
  * Al subir una versión nueva, cambiar VERSION para forzar la actualización.
  */
-var VERSION = 'rehub-v1';
+var VERSION = 'rehub-v2';
 var APP = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {

@@ -253,8 +253,8 @@ function vHoy(){
   if(sinF.length) h+='<div class="note warn">'+sinF.length+' vencimientos sin fecha: '+sinF.map(function(v){return esc(v.Piso+' '+v.Tipo.toLowerCase());}).join(', ')+'</div>';
   h+='</div>';
   // Cobros
-  h+='<div class="sec" id="cobros"><h2>Cobros que faltan · '+MESES[M.Mo]+'</h2>';
-  if(!pend.length) h+='<div class="card empty">Todo lo vencido de '+MESES[M.Mo]+' está cobrado ✓</div>';
+  h+='<div class="sec" id="cobros"><h2>Cobros sin ver en el banco · '+MESES[M.Mo]+'</h2>';
+  if(!pend.length) h+='<div class="card empty">Todo lo vencido de '+MESES[M.Mo]+' está cobrado según el banco ✓</div>';
   pend.forEach(function(c){
     var extra=[];
     if(c.sale) extra.push(c.sale<=M.hoy?'Sale el '+dd(c.sale):'Sale el '+dd(c.sale));
@@ -263,8 +263,13 @@ function vHoy(){
       (c.incid?'<div class="it" onclick="verInc(\''+c.incid.ID+'\')"><div class="sp"><div class="s"><b>'+esc(c.incid.ID)+' · '+esc(c.incid.Estado)+'</b></div><div class="s clamp">'+esc(c.incid['Siguiente paso'])+'</div></div></div>':'')+
       '</div></div>';
   });
+  var bh=bancoHasta(); if(pend.length&&bh) h+='<div class="note">Banco conciliado hasta el '+dd(bh)+'. Lo cobrado después aparece tras el barrido del día 11.</div>';
   if(sinDia.length) h+='<div class="note">Sin día de pago en Inquilinos: '+sinDia.map(function(c){return esc(c.piso+(c.hab?' '+c.hab:''));}).join(', ')+'</div>';
   h+='</div>';
+  // Recibos nuevos (últimos 15 días)
+  var hace15=new Date(M.hoy.getTime()-15*864e5);
+  var rn=M.rec.filter(function(r){var f=fecha(r['Fecha cobro']);return r.PDF&&f&&f>=hace15;}).sort(function(a,b){return fecha(b['Fecha cobro'])-fecha(a['Fecha cobro']);});
+  if(rn.length){h+='<div class="sec"><h2>Recibos nuevos</h2><div class="card list">';rn.forEach(function(r){h+=filaRecibo(r,true);});h+='</div></div>';}
   // Incidencias
   var top=M.abiertas.slice().sort(ordenInc).slice(0,3);
   h+='<div class="sec"><div class="sech"><h2>Incidencias abiertas</h2><button onclick="nav(\'inc\')">Las '+M.abiertas.length+'</button></div><div class="card list">';
@@ -283,7 +288,8 @@ function filaInc(i,det){
     (i['Afecta a / contraparte']&&i['Afecta a / contraparte']!=='—'?'<div><b>Contraparte:</b> '+esc(i['Afecta a / contraparte'])+'</div>':'')+
     (i.Responsable?'<div><b>Responsable:</b> '+esc(i.Responsable)+'</div>':'')+
     (num(i['Importe €'])?'<div><b>Importe:</b> '+eur(num(i['Importe €']),true)+'</div>':'')+
-    (/^https?:/.test(i.Enlace)?'<div><a href="'+esc(i.Enlace)+'" target="_blank">Abrir adjunto</a></div>':'')+'</div></div>';
+    (/^https?:/.test(i.Enlace)?'<div><a href="'+esc(i.Enlace)+'" target="_blank">Abrir adjunto</a></div>':'')+
+    '<div class="btns" style="margin-top:8px"><button class="btn" onclick="editarInc(\''+i.ID+'\')">Editar</button><button class="btn" onclick="editarInc(\''+i.ID+'\',true)">Cerrar incidencia</button></div></div></div>';
 }
 
 function estadoPiso(cod){
@@ -349,6 +355,12 @@ function vFicha(cod,per){
     h+='<div class="it"><div class="sp t clamp" style="font-weight:400">'+esc(v.Concepto)+'</div>'+d+'</div>';
   });
   h+='</div></div>';
+  // Recibos del piso
+  var rs=M.rec.filter(function(r){return r.Piso===cod&&r.PDF;}).sort(function(a,b){return fecha(b['Fecha cobro'])-fecha(a['Fecha cobro']);});
+  h+='<div class="sec"><h2>Recibos</h2><div class="card list">';
+  rs.slice(0,VISTA.todosRec?999:4).forEach(function(r){h+=filaRecibo(r,cs.length>1);});
+  if(!rs.length) h+='<div class="empty">Todavía no hay recibos de este piso.</div>';
+  h+='</div>'+(rs.length>4&&!VISTA.todosRec?'<button class="btn" onclick="VISTA.todosRec=true;pintar()">Ver los '+rs.length+' recibos</button>':'')+'</div>';
   // Incidencias del piso
   var is=M.abiertas.filter(function(i){return i.Piso===cod;}).sort(ordenInc);
   h+='<div class="sec"><h2>Incidencias abiertas ('+is.length+')</h2><div class="card list">';
@@ -370,6 +382,17 @@ function vInc(filtro){
   return h+'<button class="fab" onclick="nueva()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Incidencia</button>';
 }
 
+
+function filaRecibo(r,conNombre){
+  var u=r.PDF, k=RECIBO_CACHE[u]?'Compartir':'Enviar';
+  var est=PREP[u]?'Preparando…':k;
+  return '<div class="it"><div class="sp"><div class="t">'+esc(String(key(r,'Mes')).replace(/ de \d{4}$/,'').replace(/^./,function(c){return c.toUpperCase();}))+' · '+esc(r['Importe €'])+'</div><div class="s">'+
+    (conNombre?esc((r['Hab.']?r['Hab.']+' · ':'')+String(r.Inquilino).split(' ')[0])+' · ':'')+esc(r.Piso)+' · cobrado el '+esc(r['Fecha cobro'])+'</div></div>'+
+    '<button class="pill p-ok" style="border:0;padding:8px 12px" '+(PREP[u]?'disabled':'')+' onclick="enviarRecibo(\''+esc(u)+'\',\''+esc(r['Nº'])+'\')">'+est+'</button></div>';
+}
+function bancoHasta(){
+  var mx=null; M.mov.forEach(function(m){if(m.f&&m.f<=M.hoy&&(!mx||m.f>mx))mx=m.f;}); return mx;
+}
 /* ---------- alta de incidencia (con cola sin conexión) ---------- */
 var F=null;
 function vNueva(){
@@ -427,6 +450,62 @@ function guardar(){
     .catch(function(){ aCola(); });
 }
 
+/* ---------- recibos: enviar el PDF desde el móvil ---------- */
+var RECIBO_CACHE={}, PREP={};
+function compartir(u,file){
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    return navigator.share({files:[file],title:file.name}).catch(function(e){ if(e&&e.name==='NotAllowedError'){avisar('Recibo listo: pulsa «Compartir».');} });
+  }
+  window.open(u,'_blank');
+  return Promise.resolve();
+}
+function enviarRecibo(u,num){
+  if(RECIBO_CACHE[u]) return compartir(u,RECIBO_CACHE[u]);
+  if(!navigator.onLine) return avisar('Sin conexión: el recibo no está guardado en el móvil.');
+  PREP[u]=true; pintar();
+  api('recibo',{url:u}).then(function(j){
+    var b=atob(j.res.b64), a=new Uint8Array(b.length); for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);
+    RECIBO_CACHE[u]=new File([a],j.res.nombre||(num+'.pdf'),{type:j.res.mime||'application/pdf'});
+    delete PREP[u]; pintar();
+    return compartir(u,RECIBO_CACHE[u]);
+  }).catch(function(e){delete PREP[u];ULT_ERR='No he podido traer el recibo: '+e.message;pintar();});
+}
+
+/* ---------- editar y cerrar incidencias (necesita conexión) ---------- */
+var E=null;
+function isoDe(s){var d=fecha(s);return d?d.toISOString().slice(0,10):'';}
+function editarInc(id,cerrar){
+  var i=M.inc.filter(function(x){return x.ID===id;})[0]; if(!i) return;
+  E={id:id,cerrar:!!cerrar,i:i,estado:i.Estado||'Abierta',siguiente:i['Siguiente paso']||'',control:isoDe(i['Fecha de control']),prioridad:i.Prioridad||'',cierre:''};
+  VISTA={t:'editar',prev:VISTA}; pintar(); window.scrollTo(0,0);
+}
+function vEditar(){
+  var i=E.i;
+  var h='<div class="form"><div class="row"><button style="background:none;border:0;color:var(--ok);font-size:15px;min-height:44px;padding:0" onclick="volver()">Cancelar</button><h2 class="sp" style="text-align:center;font-size:17px">'+(E.cerrar?'Cerrar ':'Editar ')+esc(E.id)+'</h2><span style="width:60px"></span></div>';
+  h+='<div class="card" style="padding:12px 14px"><div class="t">'+esc(i['Descripción'])+'</div><div class="s">'+esc(i.Piso)+' · '+esc(i.Tipo)+'</div></div>';
+  if(!navigator.onLine) h+='<div class="info" style="margin:0">Sin conexión: para cambiar una incidencia hace falta internet.</div>';
+  if(E.cerrar){
+    h+='<div><label class="f" for="cie">¿Cómo se ha resuelto?</label><textarea id="cie" rows="4" placeholder="Ej.: arreglado por el fontanero; factura enlazada" oninput="E.cierre=this.value">'+esc(E.cierre)+'</textarea><div class="s" style="margin-top:6px">Queda en «Cierre / resultado» con la fecha de hoy y la incidencia pasa a Cerrada.</div></div>';
+  } else {
+    h+='<div><label class="f">Estado</label><div class="chips">'+['Abierta','En curso','Esperando a tercero'].map(function(x){return '<button class="'+(E.estado===x?'on':'')+'" onclick="E.estado=\''+x+'\';pintar()">'+x+'</button>';}).join('')+'</div></div>';
+    h+='<div><label class="f" for="esig">Siguiente paso</label><textarea id="esig" rows="4" oninput="E.siguiente=this.value">'+esc(E.siguiente)+'</textarea></div>';
+    h+='<div><label class="f" for="ectl">Fecha de control</label><input type="date" id="ectl" value="'+esc(E.control)+'" onchange="E.control=this.value"></div>';
+    h+='<div><label class="f">Prioridad</label><div class="seg" style="margin:0">'+['Alta','Media','Baja'].map(function(x){return '<button class="'+(E.prioridad===x?'on':'')+'" onclick="E.prioridad=\''+x+'\';pintar()">'+x+'</button>';}).join('')+'</div></div>';
+  }
+  if(E.err) h+='<div class="err" style="margin:0">'+esc(E.err)+'</div>';
+  h+='<button class="btn pri" style="height:54px;font-size:16px" '+(E.guardando||!navigator.onLine?'disabled':'')+' onclick="guardarEdicion()">'+(E.guardando?'Guardando…':(E.cerrar?'Cerrar incidencia':'Guardar cambios'))+'</button></div>';
+  return h;
+}
+function guardarEdicion(){
+  E.err='';
+  var d={id:E.id};
+  if(E.cerrar){ if(!E.cierre.trim()){E.err='Escribe cómo se ha resuelto.';return pintar();} d.estado='Cerrada'; d.cierre=E.cierre.trim(); }
+  else { d.estado=E.estado; d.siguiente=E.siguiente.trim(); d.control=E.control; d.prioridad=E.prioridad; }
+  E.guardando=true; pintar();
+  api('editarIncidencia',d).then(function(){E=null;VISTA={t:'inc'};avisar('Incidencia '+d.id+(d.estado==='Cerrada'?' cerrada.':' actualizada.'));cargar();})
+    .catch(function(e){E.guardando=false;E.err='No se ha guardado: '+e.message;pintar();});
+}
+
 /* ---------- navegación, carga y arranque ---------- */
 function haceCuanto(iso){
   if(!iso) return '';
@@ -459,14 +538,14 @@ function pintar(){
   if(!M){app.innerHTML=cabecera()+'<div class="load">'+(navigator.onLine?'Leyendo el Libro…':'Sin conexión y sin datos guardados todavía.')+'</div>';return;}
   var y=window.scrollY, h;
   try{
-    h={hoy:vHoy,pisos:vPisos,inc:function(){return vInc(VISTA.f);},ficha:function(){return vFicha(VISTA.cod,VISTA.per);},nueva:vNueva}[VISTA.t]();
+    h={hoy:vHoy,pisos:vPisos,inc:function(){return vInc(VISTA.f);},ficha:function(){return vFicha(VISTA.cod,VISTA.per);},nueva:vNueva,editar:vEditar}[VISTA.t]();
   }catch(e){h='<div class="err">Error al pintar la pantalla: '+esc(e.message)+'</div>';}
-  if(VISTA.t!=='nueva') h=cabecera()+h;
+  if(VISTA.t!=='nueva'&&VISTA.t!=='editar') h=cabecera()+h;
   var foco=document.activeElement&&document.activeElement.id;
   app.innerHTML=h;
   if(foco&&document.getElementById(foco)){var el=document.getElementById(foco);el.focus();if(el.setSelectionRange&&el.value)try{el.setSelectionRange(el.value.length,el.value.length);}catch(_){}}
   window.scrollTo(0,y);
-  document.getElementById('nav').style.display=VISTA.t==='nueva'?'none':'grid';
+  document.getElementById('nav').style.display=(VISTA.t==='nueva'||VISTA.t==='editar')?'none':'grid';
   var tab=VISTA.t==='ficha'?'pisos':VISTA.t;
   Array.prototype.forEach.call(document.querySelectorAll('nav button'),function(b){b.classList.toggle('on',b.getAttribute('data-t')===tab);});
 }
