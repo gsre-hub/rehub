@@ -169,7 +169,9 @@ function num(s){
   else if(/^-?\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
   var n=parseFloat(s); return isNaN(n)?0:n;
 }
-function eur(n,dec){return (n<0?'−':'')+Math.abs(n).toLocaleString('es-ES',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0,useGrouping:true})+' €';}
+// Moneda por piso: columna «Moneda» de Inmuebles si existe; LDN en libras por defecto.
+function monedaDe(cod){var p=(typeof M!=='undefined'&&M&&M.inm)?M.inm.filter(function(x){return x.cod===cod;})[0]:null;return (p&&p.moneda)||(cod==='LDN'?'GBP':'EUR');}
+function eur(n,dec,cod){var gbp=cod&&monedaDe(cod)==='GBP';var t=Math.abs(n).toLocaleString('es-ES',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0,useGrouping:true});return (n<0?'−':'')+(gbp?'£'+t:t+' €');}
 function dd(d){return d?('0'+d.getUTCDate()).slice(-2)+'/'+('0'+(d.getUTCMonth()+1)).slice(-2):'';}
 function dias(a,b){return Math.round((b-a)/864e5);}
 function corto(nombre){var p=String(nombre).split('–');return (p[1]||p[0]).trim();}
@@ -179,7 +181,7 @@ function modelo(R){
   var hoy=fecha(R.hoy), Y=hoy.getUTCFullYear(), Mo=hoy.getUTCMonth();
   var mesTxt=MESES[Mo]+' de '+Y;
   var inm=objs(R.inmuebles).filter(function(x){return x['Código']&&x['Código']!=='PERSONAL';}).map(function(x){
-    return {cod:x['Código'],nombre:x.Nombre,titular:x.Titular,pct:num(x['% titularidad'])/100||1,compra:fecha(x['Fecha compra']),precio:num(x['Precio compra'])};});
+    return {cod:x['Código'],nombre:x.Nombre,titular:x.Titular,pct:num(x['% titularidad'])/100||1,compra:fecha(x['Fecha compra']),precio:num(x['Precio compra']),moneda:String(x.Moneda||'').toUpperCase().trim()};});
   var inq=objs(R.inquilinos).filter(function(x){return x.Piso&&x.ID&&x.ID.indexOf('Leyenda')!==0;});
   var ven=objs(R.vencimientos).filter(function(x){return x.ID;}).map(function(v){v.f=fecha(v.Vence);return v;});
   var inc=objs(R.incidencias).filter(function(x){return /^INC-/.test(x.ID);}).map(function(i){i.fc=fecha(i['Fecha de control']);return i;});
@@ -259,7 +261,7 @@ function vHoy(){
     var extra=[];
     if(c.sale) extra.push(c.sale<=M.hoy?'Sale el '+dd(c.sale):'Sale el '+dd(c.sale));
     extra.push('pago hacia el día '+c.dia);
-    h+='<div class="card" style="border-color:var(--warnln)"><div class="list"><div class="it"><span class="dot" style="background:#C2570C"></span><div class="sp"><div class="t">'+esc(c.nombre.split(' ')[0])+(c.hab?' · '+esc(c.hab):'')+'</div><div class="s">'+esc(c.piso)+' · '+extra.join(' · ')+'</div></div><span class="amt">'+eur(c.renta)+'</span></div>'+
+    h+='<div class="card" style="border-color:var(--warnln)"><div class="list"><div class="it"><span class="dot" style="background:#C2570C"></span><div class="sp"><div class="t">'+esc(c.nombre.split(' ')[0])+(c.hab?' · '+esc(c.hab):'')+'</div><div class="s">'+esc(c.piso)+' · '+extra.join(' · ')+'</div></div><span class="amt">'+eur(c.renta,false,c.piso)+'</span></div>'+
       (c.incid?'<div class="it" onclick="verInc(\''+c.incid.ID+'\')"><div class="sp"><div class="s"><b>'+esc(c.incid.ID)+' · '+esc(c.incid.Estado)+'</b></div><div class="s clamp">'+esc(c.incid['Siguiente paso'])+'</div></div></div>':'')+
       '</div></div>';
   });
@@ -312,7 +314,7 @@ function vPisos(){
     var sub=cs.length===1?esc(cs[0].nombre.split(' ')[0])+' · '+esc(String(cs[0].fin).split(/[;(]/)[0]):(cs.length?cs.length+' habitaciones alquiladas':esc(p.titular));
     var pend=cs.some(function(c){return c.estado==='pendiente';});
     h+='<button class="card piso" style="'+(pend?'border-color:var(--warnln)':'')+'" onclick="ficha(\''+p.cod+'\')"><div class="row" style="align-items:flex-start"><div class="sp"><div class="code">'+esc(p.cod)+(p.pct<1?' · '+Math.round(p.pct*100)+' %':'')+'</div><div style="font-size:16px;font-weight:600">'+esc(corto(p.nombre))+'</div><div class="s">'+sub+'</div></div>'+estadoPiso(p.cod)+'</div>'+
-      '<div class="stats"><div><span>Renta/mes</span><b>'+(renta?eur(renta):'—')+'</b></div><div><span>'+(p.pct<1?'Tu parte, ':'Resultado ')+M.Y+'</span><b>'+(r.ing||r.gas?eur(r.neto*p.pct):'—')+'</b></div><div><span>Incidencias</span><b class="'+(n>2?'bad':'')+'">'+n+'</b></div></div></button>';
+      '<div class="stats"><div><span>Renta/mes</span><b>'+(renta?eur(renta,false,p.cod):'—')+'</b></div><div><span>'+(p.pct<1?'Tu parte, ':'Resultado ')+M.Y+'</span><b>'+(r.ing||r.gas?eur(r.neto*p.pct,false,p.cod):'—')+'</b></div><div><span>Incidencias</span><b class="'+(n>2?'bad':'')+'">'+n+'</b></div></div></button>';
   });
   return h+'</div>'+pie()+'<button class="fab" onclick="nueva()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Incidencia</button>';
 }
@@ -332,8 +334,8 @@ function vFicha(cod,per){
   var renta=cs.reduce(function(s,c){return s+c.renta;},0);
   var h='<div class="top" style="padding-top:16px"><div class="row"><button class="back" onclick="nav(\'pisos\')" aria-label="Volver"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#17201B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><div class="sp"><div class="code">'+esc(cod)+(p.pct<1?' · '+Math.round(p.pct*100)+' %':'')+'</div><div style="font-size:18px;font-weight:600">'+esc(p.nombre)+'</div></div></div></div>';
   h+='<div class="seg">'+['mes','año','compra'].map(function(x){return '<button class="'+(x===per?'on':'')+'" onclick="ficha(\''+cod+'\',\''+x+'\')">'+({mes:'Mes','año':'Año',compra:'Desde compra'})[x]+'</button>';}).join('')+'</div>';
-  h+='<div class="sec"><div class="card" style="padding:14px;display:flex;flex-direction:column;gap:12px"><div class="stats" style="border:0;padding:0"><div><span>Ingresos</span><b>'+eur(r.ing)+'</b></div><div><span>Gastos</span><b>'+eur(-r.gas)+'</b></div><div><span>Resultado</span><b class="'+(r.neto>=0?'ok':'bad')+'">'+eur(r.neto)+'</b></div></div>'+
-    (p.pct<1?'<div class="s">Tu parte ('+Math.round(p.pct*100)+' %): <b>'+eur(r.neto*p.pct)+'</b></div>':'')+
+  h+='<div class="sec"><div class="card" style="padding:14px;display:flex;flex-direction:column;gap:12px"><div class="stats" style="border:0;padding:0"><div><span>Ingresos</span><b>'+eur(r.ing,false,cod)+'</b></div><div><span>Gastos</span><b>'+eur(-r.gas,false,cod)+'</b></div><div><span>Resultado</span><b class="'+(r.neto>=0?'ok':'bad')+'">'+eur(r.neto,false,cod)+'</b></div></div>'+
+    (p.pct<1?'<div class="s">Tu parte ('+Math.round(p.pct*100)+' %): <b>'+eur(r.neto*p.pct,false,cod)+'</b></div>':'')+
     '<div class="bars">'+meses.map(function(m){return '<div><i style="height:'+Math.round(m.i/mx*100)+'%;background:#0E6B58"></i><i style="height:'+Math.round(m.g/mx*100)+'%;background:#E8A26F"></i></div>';}).join('')+'</div>'+
     '<div class="lbls">'+meses.map(function(m){return '<span>'+m.l+'</span>';}).join('')+'</div>'+
     '<div class="row s"><span class="sp">'+(renta&&p.precio?'Rentabilidad bruta s/ compra: '+(renta*12/p.precio*100).toFixed(1).replace('.',',')+' %':'')+'</span><span>'+esc(etiqueta)+'</span></div>'+
@@ -343,7 +345,7 @@ function vFicha(cod,per){
   if(!cs.length) h+='<div class="empty">Sin inquilinos vigentes en el Libro.</div>';
   cs.forEach(function(c){
     var st={cobrado:'<span class="pill p-ok">Cobrado</span>',pendiente:'<span class="pill p-warn">Pendiente</span>','por-llegar':'<span class="pill p-mut">Por llegar</span>','sin-dia':'<span class="pill p-mut">Sin día de pago</span>'}[c.estado];
-    h+='<div class="it"><div class="sp"><div class="t">'+(c.hab?esc(c.hab)+' · ':'')+esc(c.nombre)+' · '+eur(c.renta)+'/mes</div><div class="s clamp">'+(c.fin?esc(String(c.fin).split(/[;(]/)[0]):'')+(c.sale?' Sale el '+dd(c.sale):'')+'</div></div>'+st+'</div>';
+    h+='<div class="it"><div class="sp"><div class="t">'+(c.hab?esc(c.hab)+' · ':'')+esc(c.nombre)+' · '+eur(c.renta,false,cod)+'/mes</div><div class="s clamp">'+(c.fin?esc(String(c.fin).split(/[;(]/)[0]):'')+(c.sale?' Sale el '+dd(c.sale):'')+'</div></div>'+st+'</div>';
   });
   h+='</div></div>';
   // Vencimientos
